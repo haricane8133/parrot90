@@ -111,7 +111,6 @@ from random import randint
 import busio, displayio, terminalio, i2cdisplaybus
 from adafruit_display_text import label
 from adafruit_displayio_ssd1306 import SSD1306
-import microcontroller
 from kmk.extensions.lock_status import LockStatus
 
 
@@ -151,7 +150,7 @@ color_palette[0] = 0xFFFFFF
 bg_sprite = displayio.TileGrid(color_bitmap, pixel_shader=color_palette, x=0, y=0)
 mainGrp.append(bg_sprite)
 
-# Inner black rectangle (border effect)
+# Inner black rect (border)
 inner_bitmap = displayio.Bitmap(WIDTH - BORDER * 2, HEIGHT - BORDER * 2, 1)
 inner_palette = displayio.Palette(1)
 inner_palette[0] = 0x000000
@@ -175,6 +174,7 @@ hostText = "<Mac>" if microcontroller.nvm[2] else "<Win>"
 host_label = label.Label(terminalio.FONT, text=hostText, color=0xFFFFFF, x=93, y=24)
 mainGrp.append(host_label)
 
+# Caps Lock symbol
 caps_label = label.Label(terminalio.FONT, text="^", color=0xFFFFFF, x=103, y=23, scale=4)
 
 class _LockStatus(LockStatus):
@@ -188,6 +188,70 @@ class _LockStatus(LockStatus):
                 mainGrp.remove(caps_label)
 
 keyboard.extensions.append(_LockStatus())
+
+# -------------------------------
+# WPM tracking (reset after idle)
+# -------------------------------
+from kmk.keys import KC
+
+keys_typed = 0
+start_time = None
+last_key_time = None
+last_oled_time = None
+
+UPDATE_INTERVAL = 0.5
+COUNT_RESET_TIME = 5
+
+wpm_label = label.Label(terminalio.FONT, text="WPM: 0", color=0xFFFFFF, x=3, y=45)
+mainGrp.append(wpm_label)
+
+def get_wpm():
+    global keys_typed, start_time
+    if not start_time or keys_typed == 0:
+        return 0
+    elapsed = time.monotonic() - start_time
+    if elapsed <= 0:
+        return 0
+    return int((keys_typed / 5) * 60 / elapsed)
+
+# Wrap KMK process_key
+orig_process_key = keyboard.process_key
+
+def counting_process_key(key, is_pressed, int_coord=None):
+    global keys_typed, start_time, last_key_time
+
+    now = time.monotonic()
+
+    if is_pressed:
+        if keys_typed == 0:
+            start_time = now
+        keys_typed += 1
+        last_key_time = now
+
+    return orig_process_key(key, is_pressed, int_coord)
+
+keyboard.process_key = counting_process_key
+
+# Continuous update (so WPM drops to 0 if reset or idle)
+def update_wpm():
+    global keys_typed, start_time, last_oled_time, last_key_time, UPDATE_INTERVAL, COUNT_RESET_TIME
+
+    now = time.monotonic()
+
+    if last_key_time and now - last_key_time >= COUNT_RESET_TIME:
+        # Reset if idle for some times
+        keys_typed = 0
+        start_time = None
+
+    if last_oled_time == None or ((now - last_oled_time) > UPDATE_INTERVAL):
+        wpm_label.text = f"WPM: {get_wpm()}"
+        last_oled_time = now
+
+keyboard.before_matrix_scan = update_wpm
+
+
+# -------------------------------
+
 
 if __name__ == '__main__':
     print("LHS: Firing up Keyboard!")
