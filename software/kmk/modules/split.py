@@ -27,6 +27,41 @@ class SplitType:
     BLE = const(4)
 
 
+def make_split_coord_mapping(
+    rows,
+    left_cols,
+    right_cols,
+    right_start=None,
+    split_flip=False,
+):
+    """Generate split coord mapping for asymmetric row-major halves.
+
+    rows: number of rows on each half.
+    left_cols: physical columns on left half.
+    right_cols: physical columns on right half.
+    right_start: key-number start for right half events.
+    split_flip: reverse right-half column order in the mapping.
+    """
+    if right_start is None:
+        right_start = rows * right_cols
+
+    cm = []
+    for ridx in range(rows):
+        for cidx in range(left_cols):
+            cm.append(ridx * left_cols + cidx)
+
+        if split_flip:
+            rhs_cols = range(right_cols - 1, -1, -1)
+        else:
+            rhs_cols = range(right_cols)
+
+        for cidx in rhs_cols:
+            cm.append(right_start + ridx * right_cols + cidx)
+
+    return tuple(cm)
+
+
+
 class Split(Module):
     '''Enables splitting keyboards wirelessly, or wired'''
 
@@ -36,6 +71,7 @@ class Split(Module):
         split_side=None,
         split_type=SplitType.UART,
         split_target_left=True,
+        split_mapping=None,
         uart_interval=20,
         data_pin=None,
         data_pin2=None,
@@ -49,6 +85,7 @@ class Split(Module):
         self.split_type = split_type
         self.split_target_left = split_target_left
         self.split_offset = None
+        self.split_mapping = split_mapping
         self.data_pin = data_pin
         self.data_pin2 = data_pin2
         self.uart_flip = uart_flip
@@ -125,6 +162,21 @@ class Split(Module):
         if self.split_offset is None:
             self.split_offset = keyboard.matrix[-1].coord_mapping[-1] + 1
 
+        if self.split_mapping is not None:
+            # Compute coord mapping internally from split geometry/options.
+            rows = self.split_mapping.get('rows')
+            left_cols = self.split_mapping.get('left_cols')
+            right_cols = self.split_mapping.get('right_cols')
+            right_start = self.split_mapping.get('right_start')
+            mapping_flip = self.split_mapping.get('split_flip', self.split_flip)
+            keyboard.coord_mapping = make_split_coord_mapping(
+                rows=rows,
+                left_cols=left_cols,
+                right_cols=right_cols,
+                right_start=right_start,
+                split_flip=mapping_flip,
+            )
+
         if self.split_type == SplitType.UART and self.data_pin is not None:
             if self._is_target or not self.uart_flip:
                 if self._use_pio:
@@ -142,7 +194,7 @@ class Split(Module):
                     )
 
         # Attempt to sanely guess a coord_mapping if one is not provided.
-        if not keyboard.coord_mapping and keyboard.row_pins and keyboard.col_pins:
+        if self.split_mapping is None and not keyboard.coord_mapping and keyboard.row_pins and keyboard.col_pins:
             cm = []
 
             rows_to_calc = len(keyboard.row_pins)
