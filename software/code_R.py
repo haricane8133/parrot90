@@ -14,9 +14,9 @@ from kmk.scanners import DiodeOrientation
 print("RHS: Configuring Keyboard")
 
 keyboard = KMKKeyboard()
-keyboard.debug_enabled = True
+keyboard.debug_enabled = False
 # if microcontroller.nvm[1] == 1:
-#     keyboard.debug_enabled = True
+#     keyboard.debug_enabled = False
 
 from kmk.modules.split import Split, SplitType, SplitSide
 split = Split(
@@ -24,6 +24,7 @@ split = Split(
     split_target_left=True,
     split_flip=False,
     split_type=SplitType.UART,
+    uart_interval = 1,
     split_mapping={
         'rows': 6,
         'left_cols': 7,
@@ -36,7 +37,7 @@ split = Split(
     data_pin2=board.GP1,
     # uart_flip = False,
 )
-split.debug_enabled = True
+split.debug_enabled = False
 keyboard.modules.append(split)
 
 from kmk.modules.layers import Layers
