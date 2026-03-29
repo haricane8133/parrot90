@@ -93,12 +93,12 @@ if row6.value and not MAC_PRESSED:
 col3.value = False
 
 
-# 3) Check Fn Button press - To enable WS connect experimental mode
+# 3) Turn off GIF and WPM
 col2.value = True
 if row6.value:
-  microcontroller.nvm[3] = 1
-else:
   microcontroller.nvm[3] = 0
+else:
+  microcontroller.nvm[3] = 1
 col2.value = False
 
 

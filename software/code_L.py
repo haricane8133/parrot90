@@ -108,6 +108,8 @@ keyboard.modules.append(encoder_handler)
 
 print("LHS: Starting Display")
 
+ENABLE_GIF_WPM = microcontroller.nvm[3] == 1
+
 from random import randint
 import busio, displayio, terminalio, i2cdisplaybus
 from adafruit_display_text import label
@@ -169,12 +171,12 @@ border_sprite = displayio.TileGrid(border_bitmap, pixel_shader=border_palette, x
 
 
 # Banner
-banner = label.Label(terminalio.FONT, text=NAME, color=0xFFFFFF, x=4, y=7, scale=2)
+banner = label.Label(terminalio.FONT, text=NAME, color=0xFFFFFF, x=18, y=7, scale=2)
 
 # Mode
 mode_text = '"' + message1[randint(0, len(message1)-1)] + '"'
 if microcontroller.nvm[1] == 1:
-    mode_text = "<Service Mode>"
+    mode_text = "<service mode>"
 mode_label = label.Label(terminalio.FONT, text=mode_text, color=0xFFFFFF, x=3, y=23)
 
 # Host
@@ -182,19 +184,27 @@ hostText = "<Mac>" if microcontroller.nvm[2] else "<Win>"
 host_label = label.Label(terminalio.FONT, text=hostText, color=0xFFFFFF, x=93, y=23)
 
 # Caps Lock symbol
-caps_label = label.Label(terminalio.FONT, text="^", color=0xFFFFFF, x=103, y=23, scale=4)
+caps_label1 = label.Label(terminalio.FONT, text="^", color=0xFFFFFF, x=5, y=17, scale=2)
+caps_label2 = label.Label(terminalio.FONT, text="^", color=0xFFFFFF, x=115, y=17, scale=2)
 
 class _LockStatus(LockStatus):
     def after_hid_send(self, sandbox):
         super().after_hid_send(sandbox)
         if self.get_caps_lock():
-            if caps_label not in mainGrp:
-                mainGrp.append(caps_label)
+            if caps_label1 not in mainGrp:
+                mainGrp.append(caps_label1)
+            if caps_label2 not in mainGrp:
+                mainGrp.append(caps_label2)
         else:
-            if caps_label in mainGrp:
-                mainGrp.remove(caps_label)
+            if caps_label1 in mainGrp:
+                mainGrp.remove(caps_label1)
+            if caps_label2 in mainGrp:
+                mainGrp.remove(caps_label2)
 
 keyboard.extensions.append(_LockStatus())
+
+# The big Hari logo
+hari_label = label.Label(terminalio.FONT, text="HARI", color=0xFFFFFF, x=20, y=46, scale=4)
 
 # -------------------------------
 # Bongo Cat Gif
@@ -206,14 +216,17 @@ type_start_time = None
 last_key_time = None
 last_oled_wpm_time = None
 last_oled_gif_time = time.monotonic()
+last_oled_loop_time = None
 current_gif_type = 0 # 0 means slow cat gif and 1 means fast cat gif
 
+OLED_MIN_LOOP_INTERVAL = 0.10
 WPM_UPDATE_INTERVAL = 0.5
 COUNT_RESET_TIME = 5
 GIF_WPM_THRESHOLD = 10
 GIF_TIME_THRESHOLD = 1
-GIF_SLOW_UPDATE_INTERVAL = 0.15
+GIF_SLOW_UPDATE_INTERVAL = 0.25
 GIF_FAST_UPDATE_INTERVAL = 0.20
+DISPLAY_TYPING_SUPPRESS = 0.12
 
 # Load frames
 def load_animation(path, frame_count):
@@ -233,10 +246,22 @@ cat_fast_frames = load_animation("/images/gif_fast", 3)
 current_frame = 0
 
 bmp, pal = cat_slow_frames[0]
-anim_sprite = displayio.TileGrid(bmp, pixel_shader=pal, x=30, y=28)
+anim_sprite = None
+if ENABLE_GIF_WPM:
+    anim_sprite = displayio.TileGrid(bmp, pixel_shader=pal, x=30, y=28)
+
+def display_is_busy():
+    if split._uart is not None and split._uart.in_waiting > 0:
+        return True
+    if last_key_time is not None and (time.monotonic() - last_key_time) < DISPLAY_TYPING_SUPPRESS:
+        return True
+    return False
 
 def show_frame(bmp, pal):
     global anim_sprite, current_gif_type, last_oled_gif_time, GIF_SLOW_UPDATE_INTERVAL, GIF_FAST_UPDATE_INTERVAL
+    if anim_sprite is None:
+        return False
+
     now = time.monotonic()
 
     update_interval = GIF_SLOW_UPDATE_INTERVAL
@@ -285,7 +310,9 @@ def update_animation(wpm):
 # -------------------------------
 from kmk.keys import KC
 
-wpm_label = label.Label(terminalio.FONT, text="WPM: 0", color=0xFFFFFF, x=3, y=50)
+wpm_label = None
+if ENABLE_GIF_WPM:
+    wpm_label = label.Label(terminalio.FONT, text="WPM: 0", color=0xFFFFFF, x=3, y=50)
 
 def get_wpm():
     global keys_typed, type_start_time
@@ -312,13 +339,23 @@ def counting_process_key(key, is_pressed, int_coord=None):
 
     return orig_process_key(key, is_pressed, int_coord)
 
-keyboard.process_key = counting_process_key
+if ENABLE_GIF_WPM:
+    keyboard.process_key = counting_process_key
 
 # Continuous update (so WPM drops to 0 if reset or idle)
 def update_wpm():
-    global keys_typed, type_start_time, last_oled_wpm_time, last_key_time, WPM_UPDATE_INTERVAL, COUNT_RESET_TIME
+    global keys_typed, type_start_time, last_oled_wpm_time, last_key_time, last_oled_loop_time, WPM_UPDATE_INTERVAL, COUNT_RESET_TIME
+
+    if wpm_label == None:
+        return
+    if display_is_busy():
+        return
 
     now = time.monotonic()
+    if last_oled_loop_time is not None and (now - last_oled_loop_time) < OLED_MIN_LOOP_INTERVAL:
+        return
+    last_oled_loop_time = now
+
     wpm = get_wpm()
 
     if last_key_time and now - last_key_time >= COUNT_RESET_TIME:
@@ -340,19 +377,25 @@ def combined_before_matrix_scan():
     if orig_before_matrix_scan:   # call the original, if it exists
         orig_before_matrix_scan()
 
-keyboard.before_matrix_scan = combined_before_matrix_scan
+if ENABLE_GIF_WPM:
+    keyboard.before_matrix_scan = combined_before_matrix_scan
 
 
 # -------------------------------
 
 mainGrp.append(bg_sprite)
 mainGrp.append(border_sprite)
-mainGrp.append(anim_sprite)
+if ENABLE_GIF_WPM and anim_sprite is not None:
+    mainGrp.append(anim_sprite)
 mainGrp.append(banner)
 mainGrp.append(mode_label)
 mainGrp.append(host_label)
-mainGrp.append(caps_label)
-mainGrp.append(wpm_label)
+mainGrp.append(caps_label1)
+mainGrp.append(caps_label2)
+if ENABLE_GIF_WPM and wpm_label is not None:
+    mainGrp.append(wpm_label)
+if not ENABLE_GIF_WPM and hari_label is not None:
+    mainGrp.append(hari_label)
 
 if __name__ == '__main__':
     print("LHS: Firing up Keyboard!")
