@@ -36,8 +36,8 @@ print("LHS: Starting boot.py")
 # microcontroller.nvm[1] = 0 indicates that the keyboard is started normally (Keyboard Mode)
 # microcontroller.nvm[2] = 0 indicates that the keyboard is set for Windows
 # microcontroller.nvm[2] = 1 indicates that the keyboard is set for Mac
-# microcontroller.nvm[3] = 0 indicates that the keyboard is NOT enabled for WS connect experimental feature
-# microcontroller.nvm[3] = 1 indicates that the keyboard is enabled for WS connect experimental feature
+# microcontroller.nvm[3] = 0 indicates that the keyboard is NOT enabled to show cat Gif and WPM
+# microcontroller.nvm[3] = 1 indicates that the keyboard is enabled to show cat Gif and WPM
 
 # Note that once KMK is started, we will have to set variables in the KMK Object so that these values are shared with the other half
 
@@ -93,11 +93,10 @@ if row6.value and not MAC_PRESSED:
 col3.value = False
 
 
-# 3) Turn off GIF and WPM
+# 3) Turn on Cat GIF and WPM
 col2.value = True
+microcontroller.nvm[3] = 0
 if row6.value:
-  microcontroller.nvm[3] = 0
-else:
   microcontroller.nvm[3] = 1
 col2.value = False
 
@@ -118,4 +117,4 @@ else:
   print('LHS: Keyboard working in Mac Mode')
 
 if(microcontroller.nvm[3] == 1):
-  print('LHS: WS Connect Experimentational feature enabled')
+  print('LHS: Turn on Gif and WPM')

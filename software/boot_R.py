@@ -30,8 +30,6 @@ print("RHS: Running boot.py")
 # microcontroller.nvm[1] = 0 indicates that the keyboard is started normally (Keyboard Mode)
 # microcontroller.nvm[2] = 0 indicates that the keyboard is set for Windows
 # microcontroller.nvm[2] = 1 indicates that the keyboard is set for Mac
-# microcontroller.nvm[3] = 0 indicates that the keyboard is NOT enabled for WS connect experimental feature
-# microcontroller.nvm[3] = 1 indicates that the keyboard is enabled for WS connect experimental feature
 
 # Note that once KMK is started, we will have to set variables in the KMK Object so that these values are shared with the other half
 
